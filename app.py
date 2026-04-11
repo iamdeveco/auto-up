@@ -10,7 +10,6 @@ app = Flask(__name__)
 
 # Global state to store the scraped data
 version_data = {
-    "host": "",
     "latest_release_version": "",
     "server_url": "",
     "play_version": ""
