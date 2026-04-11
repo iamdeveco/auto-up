@@ -31,7 +31,6 @@ def fetch_data():
         host = urlparse(ggp_url).netloc if ggp_url else ""
         
         current_data = {
-            "host": host,
             "latest_release_version": data.get("latest_release_version", ""),
             "server_url": data.get("server_url", ""),
             "play_version": version
