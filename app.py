@@ -15,7 +15,7 @@ cache = {
     "last_update": 0
 }
 
-CACHE_TIME = 60  # 60 sec refresh
+CACHE_TIME = 2592000  # 60 sec refresh
 
 
 def parse_date(value):
