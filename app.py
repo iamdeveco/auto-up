@@ -1,58 +1,114 @@
 import requests
 from google_play_scraper import app as google_play_app
-import json
 from flask import Flask, jsonify
+from datetime import datetime, timedelta
 import threading
 import time
-from urllib.parse import urlparse
 
 app = Flask(__name__)
 
-# Global state to store the scraped data
-version_data = {
-    "latest_release_version": "",
-    "server_url": "",
-    "play_version": ""
+session = requests.Session()
+
+# ---------- CACHE ----------
+cache = {
+    "data": None,
+    "last_update": 0
 }
 
-def fetch_data():
+CACHE_TIME = 60  # 60 sec refresh
+
+
+def parse_date(value):
     try:
-        result = google_play_app('com.dts.freefireth', lang="fr", country='fr')
-        version = result['version']
+        if isinstance(value, (int, float)) or (isinstance(value, str) and value.isdigit()):
+            return datetime.fromtimestamp(int(value))
 
-        r = requests.get(
-            f'https://bdversion.ggbluefox.com/live/ver.php?version={version}&lang=ar&device=android&channel=android&appstore=googleplay&region=ME&whitelist_version=1.3.0&whitelist_sp_version=1.0.0&device_name=google%20G011A&device_CPU=ARMv7%20VFPv3%20NEON%20VMH&device_GPU=Adreno%20(TM)%20640&device_mem=1993'
-        )
+        if isinstance(value, str):
+            return datetime.strptime(value, "%b %d, %Y")
 
-        data = r.json()
-        
-        # Extract fields
-        ggp_url = data.get("ggp_url", "")
-        host = urlparse(ggp_url).netloc if ggp_url else ""
-        
-        current_data = {
-            "latest_release_version": data.get("latest_release_version", ""),
-            "server_url": data.get("server_url", ""),
-            "play_version": version
-        }
-        
-        print(f"[INFO] Data fetched at {time.strftime('%Y-%m-%d %H:%M:%S')}")
-        return current_data
-    except Exception as e:
-        print(f"[ERROR] Failed to fetch data: {e}")
-        return {
-            "error": str(e),
-            "host": "",
-            "latest_release_version": "",
-            "server_url": "",
-            "play_version": ""
-        }
+    except:
+        return None
 
+    return None
+
+
+# ---------- BACKGROUND UPDATER ----------
+def updater():
+    global cache
+
+    while True:
+        try:
+            result = google_play_app(
+                'com.dts.freefireth',
+                lang="en",
+                country='us'
+            )
+
+            version = result.get('version', '')
+
+            last_updated_raw = (
+                result.get('updated')
+                or result.get('lastUpdatedOn')
+                or result.get('lastUpdated')
+            )
+
+            last_dt = parse_date(last_updated_raw)
+
+            last_updated_show = (
+                last_dt.strftime("%b %d, %Y") if last_dt else "unknown"
+            )
+
+            next_update = (
+                (last_dt + timedelta(days=90)).strftime("%b %d, %Y")
+                if last_dt else "unknown"
+            )
+
+            r = session.get(
+                "https://version.ggwhitehawk.com/live/ver.php",
+                params={
+                    "version": version,
+                    "lang": "bn",
+                    "device": "android",
+                    "channel": "android",
+                    "appstore": "googleplay",
+                    "region": "BD",
+                    "whitelist_version": "1.3.0",
+                    "whitelist_sp_version": "1.0.0"
+                },
+                timeout=5
+            )
+
+            data = r.json()
+
+            cache["data"] = {
+                "last_updated_on": last_updated_show,
+                "release_version": data.get("latest_release_version", "unknown"),
+                "server_url": data.get("server_url", "unknown"),
+                "play_version": version,
+                "next_update": next_update,
+                "status": "success"
+            }
+
+            cache["last_update"] = time.time()
+
+        except:
+            pass
+
+        time.sleep(CACHE_TIME)
+
+
+# ---------- API ----------
 @app.route('/')
-def get_version_data():
-    data = fetch_data()
-    return jsonify(data)
+def get_data():
+    if cache["data"]:
+        return jsonify(cache["data"])
 
+    return jsonify({"status": "loading"})
+
+
+# ---------- START ----------
 if __name__ == '__main__':
-    # Start the Flask app
-    app.run(host='0.0.0.0', port=5000)
+    thread = threading.Thread(target=updater, daemon=True)
+    thread.start()
+
+    app.run(host='0.0.0.0', port=5000, threaded=True)
